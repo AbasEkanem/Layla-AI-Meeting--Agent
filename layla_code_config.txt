@@ -1,0 +1,63 @@
+Layla.AI/
+├── .env
+├── loadenv.py
+│
+├── LAYLA.py                      # runtime harness / orchestrator
+│                                  #   - memory middleware   → LAYLA.md + experiences.md
+│                                  #   - skills middleware   → skills/layla/
+│                                  #   - imports subagents from subagent_config/*
+│
+├── LAYLA.md                      # procedural memory: identity, job, subagent routing
+│                                  #   instructions, consolidated skills content
+│
+├── experiences.md                # episodic memory: tool-call/failure logs, written by
+│                                  #   Layla at runtime, loaded back in via memory middleware
+│
+├── Harness_Engineering.py        # Nemotron failure-mitigation layer
+├── memory_manager.py             # LangMem-based: manage/search memory tools, consolidation
+├── langgraph.json
+├── Prompt_injection.md
+├── requirements.txt (+.bak2), requirements-dev.txt
+├── project_venv/
+│
+├── skills/
+│   └── layla/
+│       ├── checkpoint_resume/          (SKILL.md + references/)
+│       ├── identity_resolution/        (SKILL.md + references/)
+│       ├── state_management/           (SKILL.md + references/)
+│       └── workflow_routing/           (SKILL.md + references/)
+│
+└── subagent_config/
+    ├── ivy/
+    │   ├── agent.py
+    │   ├── prompt.md
+    │   ├── tools.py
+    │   └── skills/
+    │       ├── action_item_extractor/
+    │       ├── google_doc_creator/
+    │       └── transcript_parser/
+    ├── milo/
+    │   ├── agent.py
+    │   ├── prompt.md
+    │   ├── tools.py
+    │   └── skills/
+    │       ├── jira_ticket_creator/
+    │       ├── priority_mapper/
+    │       └── project_router/
+    ├── dex/
+    │   ├── agent.py
+    │   ├── prompt.md
+    │   ├── tools.py
+    │   └── skills/
+    │       ├── gmail_drafter/
+    │       ├── gmail_sender/
+    │       └── google_form_creator/
+    └── vera/
+        ├── agent.py
+        ├── prompt.md
+        ├── tools.py
+        └── skills/
+            ├── block_kit_composer/
+            ├── channel_routing/
+            ├── status_reporter/
+            └── thread_manager/

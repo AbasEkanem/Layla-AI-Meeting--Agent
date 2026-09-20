@@ -1,0 +1,18 @@
+# Layla.AI - development tooling. Runtime deps live in requirements.txt.
+#
+#   python -m pip install -U -r requirements-dev.txt
+
+-r requirements.txt
+
+# --- Formatting & linting ----------------------------------------------------
+black>=26.5.1
+ruff>=0.16.5
+
+# --- Type checking -----------------------------------------------------------
+mypy>=2.3.1
+
+# --- Git hooks ---------------------------------------------------------------
+pre-commit>=4.6.2
+
+# --- Fast installer / resolver -----------------------------------------------
+uv>=0.12.7

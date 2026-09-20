@@ -1,0 +1,136 @@
+# Layla.AI - runtime dependencies (direct only; pip resolves the rest).
+# Dev tooling lives in requirements-dev.txt.
+#
+#   python -m pip install -U -r requirements.txt
+#
+# Grouped by purpose. Transitive-only packages are intentionally NOT listed -
+# add one here only if project code imports it or we pin it deliberately.
+
+# --- Agent framework: LangChain / LangGraph ----------------------------------
+langchain
+langchain-core
+langchain-classic
+langchain-community
+langchain-text-splitters
+langchain-experimental
+langgraph
+langgraph-checkpoint
+langgraph-checkpoint-postgres
+langgraph-checkpoint-sqlite
+langgraph-prebuilt
+langgraph-sdk
+langgraph-cli[inmem]
+langsmith
+langmem
+deepagents>=0.7.0,<0.8.0
+
+# --- Model providers ---------------------------------------------------------
+anthropic
+openai
+google-genai
+langchain-anthropic
+langchain-openai
+langchain-google-genai
+langchain-huggingface
+langchain-nvidia-ai-endpoints
+langchain-openrouter
+huggingface_hub
+tiktoken
+
+# --- Search & retrieval tools ------------------------------------------------
+langchain-exa
+langchain-linkup
+langchain-tavily
+exa-py
+linkup-sdk
+tavily-python
+ddgs
+google_search_results
+
+# --- MCP ---------------------------------------------------------------------
+langchain-mcp-adapters
+mcp
+
+# --- Embeddings / local ML ---------------------------------------------------
+sentence-transformers
+transformers
+tokenizers
+torch
+numpy
+
+# --- Web / API layer ---------------------------------------------------------
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+gunicorn>=26.2.0
+starlette
+sse-starlette
+python-multipart
+slowapi>=0.1.9
+httpx[http2]>=0.27.0
+httpx-sse
+aiohttp
+requests
+websockets
+websocket-client  # slack_sdk Socket Mode
+
+# --- Persistence -------------------------------------------------------------
+SQLAlchemy>=2.0.0
+alembic>=1.19.1
+asyncpg>=0.31.0
+psycopg[binary,pool]>=3.1.0
+psycopg2-binary
+aiosqlite
+sqlite-vec
+redis>=5.0.0
+supabase
+pyiceberg
+# --- Google Cloud / Workspace ------------------------------------------------
+google-api-python-client
+google-auth
+google-auth-oauthlib
+google-cloud-storage>=3.13.1
+gspread>=6.2.1
+
+# --- Third-party integrations ------------------------------------------------
+slack-bolt>=1.18.0
+slack-sdk>=3.27.0
+atlassian-python-api
+docker>=7.2.0
+python-on-whales
+deepgram-sdk>=7.8.0
+resend
+pycoingecko
+
+# --- Config, validation, serialization ---------------------------------------
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+python-dotenv>=1.0.0
+PyYAML
+orjson>=3.9.0
+dataclasses-json
+jsonschema
+StrEnum
+uuid_utils
+
+# --- Security / auth ---------------------------------------------------------
+cryptography
+PyJWT
+# --- Files, text, CLI --------------------------------------------------------
+Jinja2
+lxml
+filetype
+python-magic-bin ; sys_platform == "win32"  # Linux/macOS: python-magic + libmagic
+rich
+typer
+
+# --- Resilience --------------------------------------------------------------
+tenacity>=8.2.0
+backoff>=2.2.1
+circuitbreaker>=2.1.3
+
+# --- Observability -----------------------------------------------------------
+structlog>=24.1.0
+opentelemetry-api>=1.24.0
+opentelemetry-sdk
+prometheus-client>=0.20.0
+sentry-sdk
