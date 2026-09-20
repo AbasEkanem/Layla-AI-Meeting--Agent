@@ -1,21 +1,16 @@
-"""Dex — Gmail transport layer (OAuth API primary, SMTP fallback).
+"""Dex — Gmail-specific transport helpers (MIME, HTML render, SMTP fallback).
 
-Shared auth + MIME + rendering helpers used by tools.py. Kept private (leading
-underscore) so tools.py exposes only the two @tool functions Dex actually calls.
+OAuth/credential loading and the Gmail API client now live in the shared module
+subagent_config/_shared/google_auth.py — Dex and Ivy authenticate through one
+token there. This file keeps only what is Gmail-specific.
 
 Transport contract (matches subagent_config/dex/skills/gmail_*):
   - Drafting  → Gmail API `users.drafts.create` (a real draft object → stable
     draft_id, which is what the approval gate approves).
   - Sending   → Gmail API `users.drafts.send` primary; SMTP the resilience path.
 
-Auth: OAuth via a cached token file. Interactive consent (browser) is a one-time
-manual step run outside this process — see `load_credentials` for the env vars
-and the setup error message.
-
 Environment variables (names only; values live in .env, which is gitignored):
   GMAIL_ADDRESS          sending account; also the default BCC target
-  GMAIL_OAUTH_TOKEN      path to cached OAuth token JSON (default ./.gmail_token.json)
-  GMAIL_OAUTH_CLIENT     path to OAuth client-secrets JSON (for the one-time consent)
   GMAIL_APP_PASSWORD     app password for the SMTP fallback path only
 """
 
@@ -29,64 +24,20 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formatdate, make_msgid
 
-# Scopes: compose covers drafts.create/update; send covers drafts.send.
-SCOPES = [
-    "https://www.googleapis.com/auth/gmail.compose",
-    "https://www.googleapis.com/auth/gmail.send",
-]
+from .._shared.google_auth import GoogleAuthError, get_service
+
+# Backwards-compatible alias: tools.py catches GmailAuthError.
+GmailAuthError = GoogleAuthError
 
 GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS", "")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
-_TOKEN_PATH = os.getenv("GMAIL_OAUTH_TOKEN", ".gmail_token.json")
-_CLIENT_PATH = os.getenv("GMAIL_OAUTH_CLIENT", "client_secret.json")
 
 _DRAFT_PREFIX = re.compile(r"^\s*\[DRAFT\]\s*", re.IGNORECASE)
 
 
-class GmailAuthError(RuntimeError):
-    """Raised when OAuth credentials are missing or unusable, with setup guidance."""
-
-
-def load_credentials():
-    """Load cached OAuth credentials, refreshing if expired.
-
-    Does NOT launch interactive consent — that is a one-time manual step. If no
-    valid token exists, raises GmailAuthError with instructions rather than
-    blocking on a browser prompt.
-    """
-    try:
-        from google.auth.transport.requests import Request  # noqa: PLC0415
-        from google.oauth2.credentials import Credentials  # noqa: PLC0415
-    except ImportError as e:  # pragma: no cover - deps are in requirements
-        msg = "google-auth is not installed; cannot use the Gmail API."
-        raise GmailAuthError(msg) from e
-
-    if not os.path.exists(_TOKEN_PATH):
-        msg = (
-            f"No Gmail OAuth token at '{_TOKEN_PATH}'. Run the one-time consent "
-            f"flow to create it (using client secrets at '{_CLIENT_PATH}' and "
-            f"scopes {SCOPES}), or set GMAIL_OAUTH_TOKEN to an existing token. "
-            "The SMTP fallback still works with GMAIL_ADDRESS + GMAIL_APP_PASSWORD."
-        )
-        raise GmailAuthError(msg)
-
-    creds = Credentials.from_authorized_user_file(_TOKEN_PATH, SCOPES)
-    if not creds.valid:
-        if creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            with open(_TOKEN_PATH, "w", encoding="utf-8") as fh:
-                fh.write(creds.to_json())
-        else:
-            msg = f"Gmail OAuth token at '{_TOKEN_PATH}' is invalid and cannot be refreshed. Re-run consent."
-            raise GmailAuthError(msg)
-    return creds
-
-
 def gmail_service():
-    """Return an authenticated Gmail API service client."""
-    from googleapiclient.discovery import build  # noqa: PLC0415
-
-    return build("gmail", "v1", credentials=load_credentials(), cache_discovery=False)
+    """Return an authenticated Gmail API client (via the shared auth module)."""
+    return get_service("gmail")
 
 
 # ── Rendering ────────────────────────────────────────────────────────────────
