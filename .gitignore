@@ -3,6 +3,12 @@
 .env.*
 !.env.example
 
+# OAuth credentials / cached tokens — never commit
+*.gmail_token.json
+.gmail_token.json
+client_secret*.json
+token*.json
+
 # Virtual environment
 project_venv/
 
