@@ -43,6 +43,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/documents",      # Ivy: create + batchUpdate docs
     "https://www.googleapis.com/auth/drive",          # Ivy: full Drive CRUD (search/share/delete)
     "https://www.googleapis.com/auth/forms.body",     # Dex: create + update Google Forms
+    "https://www.googleapis.com/auth/calendar.readonly",  # capture: poll events + attendees
 ]
 
 # Discovery names + versions for build(); one entry per API a subagent may need.
@@ -50,7 +51,8 @@ _API_VERSIONS = {
     "gmail": "v1",
     "docs": "v1",
     "drive": "v3",
-    "forms": "v1",  # Dex: Google Forms API
+    "forms": "v1",     # Dex: Google Forms API
+    "calendar": "v3", # capture: poll Google Calendar events
 }
 
 _TOKEN_PATH = os.getenv("GOOGLE_OAUTH_TOKEN", ".gmail_token.json")

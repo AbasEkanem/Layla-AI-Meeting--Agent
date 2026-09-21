@@ -24,7 +24,15 @@ granularity the schema's `segments` wants. Emptiness is NOT raised here: an empt
 transcript is a valid state that Layla aborts on at step 1, so this module returns
 it faithfully and lets validation happen upstream.
 
-SDK: deepgram-sdk 7.x (Fern-generated) — `DeepgramClient().listen.v1.media`.
+Two modes, same output schema:
+  - Prerecorded (`transcribe_file` / `transcribe_url`): a finished recording →
+    transcript in one call, segments from Deepgram's `utterances`.
+  - Live (`LiveSession`): a WebSocket the meeting bot streams PCM into in real
+    time; `TranscriptAccumulator` groups the word stream into per-speaker segments
+    and builds the same transcript object when the session ends.
+
+SDK: deepgram-sdk 7.x (Fern-generated) — `DeepgramClient().listen.v1.media`
+(prerecorded) and `.listen.v1.connect(...)` (live WebSocket).
 
 Environment variables (names only; values live in .env, which is gitignored):
   DEEPGRAM_API_KEY   Deepgram project API key
@@ -34,6 +42,9 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
+from dataclasses import dataclass, field
+from typing import Callable
 
 _log = logging.getLogger(__name__)
 
@@ -237,3 +248,251 @@ def transcribe_url(
         len(transcript["segments"]), len(transcript["text"]), transcript["confidence"],
     )
     return transcript
+
+
+# ── Live streaming ────────────────────────────────────────────────────────────
+# The meeting bot streams raw PCM into a Deepgram WebSocket in real time. Deepgram
+# returns word-level results with speaker labels; TranscriptAccumulator groups the
+# words into per-speaker segments and produces the same `transcript` object the
+# prerecorded path does.
+
+@dataclass
+class _Utterance:
+    """One accumulated speaker turn, built from Deepgram's streamed word events."""
+    speaker_label: str
+    start_s: float
+    end_s: float
+    words: list[str] = field(default_factory=list)
+    confidences: list[float] = field(default_factory=list)
+
+    @property
+    def text(self) -> str:
+        return " ".join(self.words)
+
+    def to_segment(self, index: int) -> dict:
+        return {
+            "segment_id": f"seg-{index}",
+            "speaker_label": self.speaker_label,
+            "start_ms": int(round(self.start_s * 1000)),
+            "end_ms": int(round(self.end_s * 1000)),
+            "text": self.text.strip(),
+        }
+
+
+class TranscriptAccumulator:
+    """Thread-safe builder that turns Deepgram's streamed word events into the
+    `transcript` schema.
+
+    Only FINAL results contribute to the transcript. Interim (`is_final=False`)
+    messages repeat words as a turn is refined, so accumulating them would double
+    count — they are for live display only and are dropped here. Words are grouped
+    into a segment per contiguous speaker; a segment flushes when the speaker
+    changes or a final message ends.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._segments: list[dict] = []
+        self._current: _Utterance | None = None
+        self._all_confidences: list[float] = []
+        self._seg_index = 0
+
+    def on_results(self, message) -> None:
+        """Feed one Deepgram Results message (ListenV1Results). Non-Results/interim ignored."""
+        try:
+            # Only Results messages carry a channel; Metadata/UtteranceEnd don't.
+            channel = getattr(message, "channel", None)
+            if channel is None:
+                return
+            if not bool(getattr(message, "is_final", False)):
+                return  # interim → display only, never accumulated
+
+            alternatives = getattr(channel, "alternatives", None) or []
+            if not alternatives:
+                return
+            words = getattr(alternatives[0], "words", None) or []
+            if not words:
+                return
+
+            with self._lock:
+                for w in words:
+                    text = getattr(w, "punctuated_word", None) or getattr(w, "word", "") or ""
+                    speaker_label = f"Speaker {getattr(w, 'speaker', 0) or 0}"
+                    start_s = float(getattr(w, "start", 0.0) or 0.0)
+                    end_s = float(getattr(w, "end", start_s) or start_s)
+                    conf = float(getattr(w, "confidence", 0.0) or 0.0)
+
+                    if self._current is None:
+                        self._current = _Utterance(speaker_label, start_s, end_s)
+                    elif speaker_label != self._current.speaker_label:
+                        self._flush_current()
+                        self._current = _Utterance(speaker_label, start_s, end_s)
+
+                    self._current.words.append(text)
+                    self._current.confidences.append(conf)
+                    self._current.end_s = end_s
+                    self._all_confidences.append(conf)
+
+                # A final message ends a turn — flush what we have.
+                self._flush_current()
+        except Exception as e:  # noqa: BLE001 - a bad event must not kill the stream
+            _log.warning("[deepgram] error processing results event: %s", e)
+
+    def _flush_current(self) -> None:
+        """Append _current to segments and clear it. Caller holds the lock."""
+        if self._current and self._current.words:
+            self._segments.append(self._current.to_segment(self._seg_index))
+            self._seg_index += 1
+        self._current = None
+
+    def build_transcript(self) -> dict:
+        """Return the assembled `transcript` object (state_schema.md format)."""
+        with self._lock:
+            if self._current and self._current.words:
+                self._flush_current()
+            segs = list(self._segments)
+            all_conf = list(self._all_confidences)
+        text = " ".join(s["text"] for s in segs).strip()
+        confidence = round(sum(all_conf) / len(all_conf), 4) if all_conf else 0.0
+        return {
+            "text": text,
+            "segments": segs,
+            "source": "deepgram",
+            "confidence": confidence,
+        }
+
+
+class LiveSession:
+    """A Deepgram live-transcription WebSocket session for the meeting bot.
+
+    Usage:
+        session = LiveSession()
+        with session.connect() as conn:
+            while audio_available:
+                conn.send(pcm_chunk)      # raw linear16 PCM bytes
+        transcript = session.get_transcript()
+
+    The audio source (the meeting bot) is external — this class owns only the
+    Deepgram side. `start_listening()` blocks, so it runs on a background thread;
+    `conn.send()` feeds media from the caller's thread. Errors surfaced by the
+    socket are captured and readable via `had_error()` / `error()`.
+    """
+
+    def __init__(
+        self,
+        *,
+        model: str | None = None,
+        language: str | None = None,
+        encoding: str = "linear16",
+        sample_rate: int = 16000,
+        channels: int = 1,
+        on_interim: Callable[[str], None] | None = None,
+    ) -> None:
+        """Args mirror a PCM bot feed. `on_interim` (optional) receives interim
+        transcript text for live display; pass None to disable interim results."""
+        self._model = model or DEFAULT_MODEL
+        self._language = language
+        self._encoding = encoding
+        self._sample_rate = sample_rate
+        self._channels = channels
+        self._on_interim = on_interim
+        self._accumulator = TranscriptAccumulator()
+        self._error: Exception | None = None
+
+    def connect(self):
+        """Context manager: open the WebSocket and yield a handle with `.send(bytes)`."""
+        client = _client()  # raises DeepgramError if key/SDK missing
+        try:
+            from deepgram.core.events import EventType  # noqa: PLC0415
+        except ImportError as e:  # pragma: no cover
+            raise DeepgramError("deepgram-sdk is missing the streaming API.") from e
+
+        opts: dict = {
+            "model": self._model,
+            "encoding": self._encoding,
+            "sample_rate": self._sample_rate,
+            "channels": self._channels,
+            "diarize": True,
+            "punctuate": True,
+            "smart_format": True,
+            # Interim results only matter when someone consumes them for display.
+            "interim_results": self._on_interim is not None,
+        }
+        if self._language:
+            opts["language"] = self._language
+
+        session = self
+
+        class _Conn:
+            def __init__(self, socket):
+                self._socket = socket
+
+            def send(self, chunk: bytes) -> None:
+                """Send a chunk of raw PCM audio to Deepgram."""
+                self._socket.send_media(chunk)
+
+        def _on_message(message):
+            # Interim results (if requested) feed the live-display callback only.
+            if session._on_interim is not None:
+                ch = getattr(message, "channel", None)
+                if ch is not None and not bool(getattr(message, "is_final", False)):
+                    try:
+                        txt = ch.alternatives[0].transcript
+                        if txt:
+                            session._on_interim(txt)
+                    except Exception:  # noqa: BLE001
+                        pass
+            session._accumulator.on_results(message)
+
+        def _on_error(err):
+            _log.error("[deepgram] websocket error: %s", err)
+            session._error = err if isinstance(err, Exception) else Exception(str(err))
+
+        class _CM:
+            _connect_cm = None
+            _socket = None
+            _thread: threading.Thread | None = None
+
+            def __enter__(cm):
+                try:
+                    cm._connect_cm = client.listen.v1.connect(**opts)
+                    cm._socket = cm._connect_cm.__enter__()
+                except Exception as e:  # noqa: BLE001
+                    raise DeepgramError(f"Deepgram live connect failed — {e}") from e
+
+                cm._socket.on(EventType.MESSAGE, _on_message)
+                cm._socket.on(EventType.ERROR, _on_error)
+                # start_listening() blocks running the recv loop — run it off-thread
+                # so the caller can send media on this one.
+                cm._thread = threading.Thread(
+                    target=cm._socket.start_listening, name="deepgram-listen", daemon=True
+                )
+                cm._thread.start()
+                return _Conn(cm._socket)
+
+            def __exit__(cm, *exc):
+                try:
+                    # Signal end-of-audio so Deepgram emits final results and closes.
+                    cm._socket.send_close_stream()
+                except Exception:  # noqa: BLE001 - best effort; close the CM regardless
+                    pass
+                try:
+                    cm._connect_cm.__exit__(*exc)  # closes the WebSocket
+                except Exception as e:  # noqa: BLE001
+                    _log.warning("[deepgram] error closing live session: %s", e)
+                finally:
+                    if cm._thread is not None:
+                        cm._thread.join(timeout=10.0)
+                return False
+
+        return _CM()
+
+    def get_transcript(self) -> dict:
+        """Return the assembled `transcript` object after the session ends."""
+        return self._accumulator.build_transcript()
+
+    def had_error(self) -> bool:
+        return self._error is not None
+
+    def error(self) -> Exception | None:
+        return self._error
