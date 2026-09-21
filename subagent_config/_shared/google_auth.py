@@ -25,13 +25,24 @@ import time
 _log = logging.getLogger(__name__)
 
 # Union of scopes across all subagents. One token, granted once, serves every
-# service. Narrow by design: drive.file (only files the app creates/opens), not
-# the broad drive scope — nothing here deletes or bulk-shares arbitrary files.
+# service.
+#
+# NOTE: `drive` (full) — NOT the narrower `drive.file`. Ivy's Drive tool suite
+# (subagent_config/ivy/_drive.py) does cross-Drive search, bulk-share, and
+# permanent delete, which drive.file cannot see or perform (drive.file is limited
+# to files the app itself created/opened). This is a deliberate widening from the
+# earlier drive.file scope: it grants read/write/DELETE across the whole account.
+# Widening the scope invalidates the existing consent — the cached token must be
+# regenerated via the one-time consent flow before Drive calls will authorise.
+# NOTE: adding 'forms.body' below widens the scope union — the cached token at
+# GOOGLE_OAUTH_TOKEN is now invalid and the one-time consent flow must be re-run
+# before any API call (Google, including gmail/docs/drive) will authorise.
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.compose",  # Dex: drafts.create/update
     "https://www.googleapis.com/auth/gmail.send",     # Dex: drafts.send
     "https://www.googleapis.com/auth/documents",      # Ivy: create + batchUpdate docs
-    "https://www.googleapis.com/auth/drive.file",     # Ivy: sharing state of its own doc
+    "https://www.googleapis.com/auth/drive",          # Ivy: full Drive CRUD (search/share/delete)
+    "https://www.googleapis.com/auth/forms.body",     # Dex: create + update Google Forms
 ]
 
 # Discovery names + versions for build(); one entry per API a subagent may need.
@@ -39,6 +50,7 @@ _API_VERSIONS = {
     "gmail": "v1",
     "docs": "v1",
     "drive": "v3",
+    "forms": "v1",  # Dex: Google Forms API
 }
 
 _TOKEN_PATH = os.getenv("GOOGLE_OAUTH_TOKEN", ".gmail_token.json")
