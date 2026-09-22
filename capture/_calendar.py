@@ -221,6 +221,14 @@ def build_roster(meeting_metadata: dict) -> dict:
     return {"source": source, "entries": entries}
 
 
+def conference_uri(event: dict) -> str | None:
+    """Public accessor: the joinable conference URI for a calendar event, or None.
+
+    This is the link the Attendee bot is dispatched to (capture._attendee.dispatch_bot).
+    """
+    return _extract_conference_uri(event)
+
+
 def get_lead_time_seconds() -> int:
     """Seconds before a meeting starts at which the bot should be dispatched."""
     return LEAD_TIME_SECONDS
