@@ -159,6 +159,9 @@ Layla.AI/
 
 ## Getting started
 
+> 📎 **Need to obtain the keys?** Step-by-step for every credential, with links:
+> **[docs/CREDENTIALS.md](docs/CREDENTIALS.md)**.
+
 ### Prerequisites
 
 - **Python 3.11+**
