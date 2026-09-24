@@ -4,8 +4,9 @@ Dex (Gmail) and Ivy (Docs/Drive) authenticate through here so credentials load
 in exactly one place. A single cached token covers the union of scopes below, so
 the one-time browser consent is done once, not per service.
 
-`get_service(api)` returns an authenticated client for "gmail", "docs", or
-"drive". `retry_media(fn)` retries a call through transient connection drops.
+`get_service(api)` returns an authenticated client for any API in _API_VERSIONS
+("gmail", "docs", "drive", "forms", "calendar"). `retry_media(fn)` retries a
+call through transient connection drops.
 
 Auth: OAuth via a cached token file. Interactive consent (browser) is a one-time
 manual step run outside this process — `load_credentials` raises with guidance
@@ -107,7 +108,7 @@ def load_credentials():
 
 
 def get_service(api: str):
-    """Return an authenticated Google API client for 'gmail', 'docs', or 'drive'."""
+    """Return an authenticated Google API client for one of _API_VERSIONS ('gmail', 'docs', 'drive', 'forms', 'calendar')."""
     if api not in _API_VERSIONS:
         msg = f"Unknown Google API '{api}'. Known: {sorted(_API_VERSIONS)}."
         raise GoogleAuthError(msg)
